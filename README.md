@@ -4,6 +4,10 @@ Jeu géographique : en cinq manches, tracez sur la carte une zone qui contient e
 
 Données : populations municipales Insee 2023, Admin Express COG 2026 (IGN). France métropolitaine.
 
+## Jouer en ligne
+
+https://julesgrandin.github.io/l-entoure-de-france/
+
 ## Développement local
 
 ```bash
