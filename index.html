@@ -20,7 +20,7 @@
 
   <div id="intro-modal" class="intro-modal" role="dialog" aria-modal="true" aria-labelledby="intro-title">
     <div class="intro-card">
-      <h1 id="intro-title">L'entoure de France</h1>
+      <h1 id="intro-title">L'entoure de&nbsp;France</h1>
       <p class="lead">
         Vous voyez ce que ça fait, un million&nbsp;? Alors, prouvez-le. Entourez sur la carte une zone qui contient le nombre d'habitants demandé.
       </p>
@@ -34,47 +34,49 @@
     </div>
   </div>
 
-  <header id="chrome" hidden>
-    <h1 class="brand">L'entoure de France</h1>
+  <aside id="score-history-wrap" class="score-history-wrap" hidden aria-label="Votre partie">
+    <p class="score-history-heading">Votre partie</p>
+    <ul id="score-history" class="score-history"></ul>
+  </aside>
 
-    <div id="score-history-wrap" class="score-history-wrap" hidden>
-      <p class="score-history-heading">Votre partie</p>
-      <ul id="score-history" class="score-history" aria-label="Votre partie"></ul>
-    </div>
+  <header id="chrome" hidden>
+    <h1 class="brand">L'entoure de&nbsp;France</h1>
 
     <div id="screen-game">
       <p class="round-meta" id="round-kicker">Manche 1 / 5</p>
       <p class="round-prompt">Entourez une zone de…</p>
       <p class="target-line" id="target-label">—</p>
 
-      <div class="round-score-wrap" id="round-score-banner" hidden>
-        <p class="round-prompt round-score-banner-kicker">Votre note</p>
-        <div class="round-score-banner">
-          <p class="round-score-banner-score"><strong id="round-score-banner-value">—</strong>/20</p>
+      <div id="round-result-sheet" class="round-result-sheet" hidden role="dialog" aria-modal="true" aria-label="Résultat de la manche">
+        <div class="round-result-card">
+          <div class="round-score-wrap" id="round-score-banner" hidden>
+            <p class="round-prompt round-score-banner-kicker">Votre note</p>
+            <div class="round-score-banner">
+              <p class="round-score-banner-score"><strong id="round-score-banner-value">—</strong>/20</p>
+            </div>
+          </div>
+          <section class="stats-section" id="result-section" hidden aria-label="Résultat de la manche">
+            <dl class="stats-grid">
+              <div class="stats-hero stats-hero-zone">
+                <p class="stats-cartouche stats-cartouche-red" id="stats-zone-label">Dans votre zone</p>
+                <dt>Nombre d'habitants</dt>
+                <dd id="res-actual">—</dd>
+                <dt>Communes entourées</dt>
+                <dd id="res-count">—</dd>
+              </div>
+              <div class="stats-hero stats-hero-ecart">
+                <p class="stats-cartouche stats-cartouche-ink">Écart</p>
+                <dt>Population</dt>
+                <dd id="res-diff-pop">—</dd>
+                <dt>Pourcentage d'erreur</dt>
+                <dd id="res-diff-pct">—</dd>
+              </div>
+            </dl>
+          </section>
+          <button type="button" id="btn-next" class="btn-primary btn-block" hidden>Manche suivante</button>
+          <button type="button" id="btn-perfect-zone" class="btn-secondary btn-block" hidden>Voir une zone à 20/20</button>
         </div>
       </div>
-
-      <section class="stats-section" id="result-section" hidden aria-label="Résultat de la manche">
-        <dl class="stats-grid">
-          <div class="stats-hero stats-hero-zone">
-            <p class="stats-cartouche stats-cartouche-red" id="stats-zone-label">Dans votre zone</p>
-            <dt>Nombre d'habitants</dt>
-            <dd id="res-actual">—</dd>
-            <dt>Communes entourées</dt>
-            <dd id="res-count">—</dd>
-          </div>
-          <div class="stats-hero stats-hero-ecart">
-            <p class="stats-cartouche stats-cartouche-ink">Écart</p>
-            <dt>Population</dt>
-            <dd id="res-diff-pop">—</dd>
-            <dt>Pourcentage d'erreur</dt>
-            <dd id="res-diff-pct">—</dd>
-          </div>
-        </dl>
-      </section>
-
-      <button type="button" id="btn-next" class="btn-primary btn-block" hidden>Manche suivante</button>
-      <button type="button" id="btn-perfect-zone" class="btn-secondary btn-block" hidden>Voir une zone à 20/20</button>
     </div>
 
     <p id="status" class="status"></p>
@@ -108,7 +110,7 @@
         <span class="toggle-ui" aria-hidden="true"></span>
         <span>Départements</span>
       </label>
-      <label class="toggle">
+      <label class="toggle toggle-communes">
         <input id="communes" type="checkbox">
         <span class="toggle-ui" aria-hidden="true"></span>
         <span>Communes</span>

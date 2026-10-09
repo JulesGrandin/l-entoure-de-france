@@ -31,6 +31,7 @@ const els = {
   timerFill: document.querySelector("#timer-fill"),
   timerValue: document.querySelector("#timer-value"),
   timerBar: document.querySelector("#timer-block .timer-bar"),
+  roundResultSheet: document.querySelector("#round-result-sheet"),
   resultSection: document.querySelector("#result-section"),
   resActual: document.querySelector("#res-actual"),
   resDiffPop: document.querySelector("#res-diff-pop"),
@@ -167,19 +168,31 @@ map.dragRotate.disable();
 map.keyboard.disable();
 map.dragPan.disable();
 
-const TIMER_BAR_PX = 18;
+const TIMER_BAR_PX = 13;
+const TIMER_BAR_PX_MOBILE = 11;
+
+function activeTimerHeight() {
+  const reserveTimer =
+    document.body.classList.contains("is-playing") ||
+    document.body.classList.contains("is-intro");
+  if (!reserveTimer) return 0;
+  const w = map.getContainer()?.clientWidth || window.innerWidth;
+  return w <= 520 ? TIMER_BAR_PX_MOBILE : TIMER_BAR_PX;
+}
 
 function mapPadding() {
   const el = map.getContainer();
   const w = el.clientWidth || window.innerWidth;
   const h = el.clientHeight || window.innerHeight;
   const inset = Math.max(10, Math.round(Math.min(w, h) * 0.022));
-  const timerTop = document.body.classList.contains("is-playing") ? TIMER_BAR_PX : 0;
+  const mobile = w <= 520;
+  const timerTop = activeTimerHeight();
+  const hudBottom = mobile ? 46 : 14;
   return {
     top: inset + timerTop,
     left: inset,
     right: inset,
-    bottom: inset + 14,
+    bottom: inset + hudBottom,
   };
 }
 
@@ -510,6 +523,18 @@ function simplifyStroke(points, minDistPx = 5) {
   return out;
 }
 
+function strokeSimplifyMovePx() {
+  return window.innerWidth <= 520 ? 2 : 4;
+}
+
+function strokeSimplifyEndPx() {
+  return window.innerWidth <= 520 ? 3 : 6;
+}
+
+function strokeCloseThresholdPx() {
+  return window.innerWidth <= 520 ? 32 : 12;
+}
+
 function closedRingFromStroke(stroke) {
   if (stroke.length < 3) return null;
   const ring = stroke.slice();
@@ -517,7 +542,8 @@ function closedRingFromStroke(stroke) {
   const last = ring[ring.length - 1];
   const a = map.project(first);
   const b = map.project(last);
-  if ((a.x - b.x) ** 2 + (a.y - b.y) ** 2 > 12 * 12) ring.push(first);
+  const closePx = strokeCloseThresholdPx();
+  if ((a.x - b.x) ** 2 + (a.y - b.y) ** 2 > closePx * closePx) ring.push(first);
   return ring.length >= 4 ? ring : null;
 }
 
@@ -659,6 +685,9 @@ function renderScoreHistory() {
     const r = game.roundResults[i];
     if (r) {
       li.textContent = `Manche ${i + 1} — ${r.pts}/20`;
+    } else if (i === game.round && game.phase !== "idle" && game.phase !== "done") {
+      li.className = "score-history-current";
+      li.textContent = `Manche ${i + 1} — En cours`;
     } else {
       li.className = "score-history-empty";
       li.textContent = `Manche ${i + 1} — À venir`;
@@ -678,7 +707,6 @@ function stopRoundTimer() {
     game.timerRaf = null;
   }
   document.body.classList.remove("has-timer");
-  scheduleRefit();
 }
 
 function startRoundTimer() {
@@ -689,7 +717,6 @@ function startRoundTimer() {
   els.timerFill.style.width = "100%";
   els.timerBar.setAttribute("aria-valuenow", "100");
   els.timerValue.textContent = `${Math.round(ROUND_TIME_MS / 1000)} s`;
-  scheduleRefit();
   tickRoundTimer();
 }
 
@@ -765,11 +792,16 @@ function beginRound() {
   const target = game.targets[game.round];
   els.roundKicker.textContent = `Manche ${game.round + 1} / 5`;
   els.targetLabel.textContent = formatPop(target);
+  els.roundResultSheet.setAttribute("hidden", "");
   els.resultSection.setAttribute("hidden", "");
   els.roundScoreBanner.setAttribute("hidden", "");
   renderScoreHistory();
   els.btnNext.setAttribute("hidden", "");
   els.btnPerfectZone.setAttribute("hidden", "");
+  if ((map.getContainer()?.clientWidth || window.innerWidth) <= 520) {
+    els.communes.checked = false;
+    setCommunesVisible(false);
+  }
   setDrawUi(false);
   startRoundTimer();
   scheduleRefit();
@@ -817,6 +849,7 @@ function applyRoundResult({ pts, actual, ids, timedOut }) {
   game.phase = "result";
 
   els.roundScoreBanner.removeAttribute("hidden");
+  els.roundResultSheet.removeAttribute("hidden");
   els.resultSection.removeAttribute("hidden");
   els.statsZoneLabel.textContent = "Dans votre zone";
   updateResultStatsDisplay(actual, ids, target);
@@ -852,6 +885,7 @@ function showFinish() {
   els.drawActions.setAttribute("hidden", "");
   els.btnNext.setAttribute("hidden", "");
   els.btnPerfectZone.setAttribute("hidden", "");
+  els.roundResultSheet.setAttribute("hidden", "");
   els.resultSection.setAttribute("hidden", "");
   els.finalScore.textContent = `${total} / 100`;
 
@@ -886,42 +920,71 @@ function clientToLngLat(clientX, clientY) {
 
 function bindDrawing() {
   const canvas = map.getCanvas();
+  let activePointerId = null;
 
-  canvas.addEventListener("pointerdown", (event) => {
-    if (game.phase !== "draw") return;
-    if (event.button !== 0) return;
-    event.preventDefault();
-    game.drawing = true;
-    setSketchCursor(true);
-    game.stroke = [clientToLngLat(event.clientX, event.clientY)];
-    game.sketchRing = null;
-    canvas.setPointerCapture(event.pointerId);
-    updateSketchLayer();
-    setDrawUi(false);
-  });
-
-  canvas.addEventListener("pointermove", (event) => {
-    if (!game.drawing || game.phase !== "draw") return;
-    event.preventDefault();
-    const pt = clientToLngLat(event.clientX, event.clientY);
+  function appendStrokePoint(clientX, clientY) {
+    const pt = clientToLngLat(clientX, clientY);
     game.stroke.push(pt);
-    game.stroke = simplifyStroke(game.stroke, 4);
+    game.stroke = simplifyStroke(game.stroke, strokeSimplifyMovePx());
     updateSketchLayer();
-  });
+  }
 
-  const endStroke = (event) => {
+  function onPointerMove(event) {
+    if (!game.drawing || game.phase !== "draw") return;
+    if (activePointerId != null && event.pointerId !== activePointerId) return;
+    event.preventDefault();
+    appendStrokePoint(event.clientX, event.clientY);
+  }
+
+  function detachWindowStrokeListeners() {
+    window.removeEventListener("pointermove", onPointerMove);
+    window.removeEventListener("pointerup", endStroke);
+    window.removeEventListener("pointercancel", endStroke);
+  }
+
+  function endStroke(event) {
     if (!game.drawing) return;
+    if (activePointerId != null && event.pointerId !== activePointerId) return;
     game.drawing = false;
+    activePointerId = null;
     setSketchCursor(false);
-    if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
-    game.stroke = simplifyStroke(game.stroke, 6);
+    detachWindowStrokeListeners();
+    try {
+      if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+    } catch (_) {
+      /* capture déjà libéré (simulateur / certains navigateurs) */
+    }
+    game.stroke = simplifyStroke(game.stroke, strokeSimplifyEndPx());
     game.sketchRing = closedRingFromStroke(game.stroke);
     updateSketchLayer();
     setDrawUi(!!game.sketchRing);
-  };
+  }
 
-  canvas.addEventListener("pointerup", endStroke);
-  canvas.addEventListener("pointercancel", endStroke);
+  canvas.addEventListener(
+    "pointerdown",
+    (event) => {
+      if (game.phase !== "draw") return;
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+      event.preventDefault();
+      detachWindowStrokeListeners();
+      game.drawing = true;
+      activePointerId = event.pointerId;
+      setSketchCursor(true);
+      game.stroke = [clientToLngLat(event.clientX, event.clientY)];
+      game.sketchRing = null;
+      try {
+        canvas.setPointerCapture(event.pointerId);
+      } catch (_) {
+        /* ok sans capture si les listeners window suivent le tracé */
+      }
+      window.addEventListener("pointermove", onPointerMove, { passive: false });
+      window.addEventListener("pointerup", endStroke);
+      window.addEventListener("pointercancel", endStroke);
+      updateSketchLayer();
+      setDrawUi(false);
+    },
+    { passive: false }
+  );
 }
 
 function mercUnit(lat) {
