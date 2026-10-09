@@ -22,8 +22,7 @@
     <div class="intro-card">
       <h1 id="intro-title">L'entoure de France</h1>
       <p class="lead">
-        En cinq manches, entourez sur la carte une zone d’environ le nombre d’habitants demandé.
-        Tracez à main levée et validez avant la fin du temps. Note finale sur 100.
+        Vous voyez ce que ça fait, un million&nbsp;? Alors, prouvez-le. Entourez sur la carte une zone qui contient le nombre d'habitants demandé.
       </p>
       <p class="field-label">Mode</p>
       <div class="mode-switch" role="group" aria-label="Mode de jeu">
@@ -31,7 +30,7 @@
         <button type="button" id="mode-grid" aria-pressed="false">Grille du moment</button>
       </div>
       <p class="mode-note" id="mode-note">Cinq objectifs tirés au hasard, dans un ordre imprévisible.</p>
-      <button type="button" id="btn-start" class="btn-primary">Lancer le jeu</button>
+      <button type="button" id="btn-start" class="btn-primary">Je pense que je peux le faire</button>
     </div>
   </div>
 
@@ -39,48 +38,43 @@
     <h1 class="brand">L'entoure de France</h1>
 
     <div id="score-history-wrap" class="score-history-wrap" hidden>
-      <p class="score-history-heading">Historique des notes</p>
-      <ul id="score-history" class="score-history" aria-label="Historique des scores"></ul>
+      <p class="score-history-heading">Votre partie</p>
+      <ul id="score-history" class="score-history" aria-label="Votre partie"></ul>
     </div>
 
     <div id="screen-game">
       <p class="round-meta" id="round-kicker">Manche 1 / 5</p>
+      <p class="round-prompt">Entourez une zone de…</p>
       <p class="target-line" id="target-label">—</p>
 
-      <p class="round-score-banner" id="round-score-banner" hidden>
-        Note manche <strong id="round-score-banner-value">—</strong>/20
-      </p>
+      <div class="round-score-wrap" id="round-score-banner" hidden>
+        <p class="round-prompt round-score-banner-kicker">Votre note</p>
+        <div class="round-score-banner">
+          <p class="round-score-banner-score"><strong id="round-score-banner-value">—</strong>/20</p>
+        </div>
+      </div>
 
       <section class="stats-section" id="result-section" hidden aria-label="Résultat de la manche">
         <dl class="stats-grid">
-          <div>
-            <dt>Objectif</dt>
-            <dd id="res-target">—</dd>
-          </div>
-          <div>
-            <dt>Dans votre zone</dt>
+          <div class="stats-hero stats-hero-zone">
+            <p class="stats-cartouche stats-cartouche-red" id="stats-zone-label">Dans votre zone</p>
+            <dt>Nombre d'habitants</dt>
             <dd id="res-actual">—</dd>
-          </div>
-          <div>
-            <dt>Écart</dt>
-            <dd id="res-diff">—</dd>
-          </div>
-          <div>
-            <dt>Communes</dt>
+            <dt>Communes entourées</dt>
             <dd id="res-count">—</dd>
           </div>
-          <div>
-            <dt>Score manche</dt>
-            <dd id="res-score">—</dd>
+          <div class="stats-hero stats-hero-ecart">
+            <p class="stats-cartouche stats-cartouche-ink">Écart</p>
+            <dt>Population</dt>
+            <dd id="res-diff-pop">—</dd>
+            <dt>Pourcentage d'erreur</dt>
+            <dd id="res-diff-pct">—</dd>
           </div>
         </dl>
       </section>
 
-      <div class="action-row" id="draw-actions">
-        <button type="button" id="btn-clear" class="btn-secondary" disabled>Effacer</button>
-        <button type="button" id="btn-validate" class="btn-primary" disabled>Valider</button>
-      </div>
       <button type="button" id="btn-next" class="btn-primary btn-block" hidden>Manche suivante</button>
+      <button type="button" id="btn-perfect-zone" class="btn-secondary btn-block" hidden>Voir une zone à 20/20</button>
     </div>
 
     <p id="status" class="status"></p>
@@ -89,8 +83,8 @@
   <div id="finish-modal" class="intro-modal" hidden role="dialog" aria-modal="true" aria-labelledby="finish-title">
     <div class="intro-card finish-card">
       <h1 id="finish-title">Partie terminée</h1>
+      <p class="final-score-kicker">Votre note :</p>
       <p class="final-score" id="final-score">—</p>
-      <p class="final-comment" id="final-comment">—</p>
       <ul class="finish-recap" id="finish-recap" aria-label="Bilan des manches"></ul>
       <p class="field-label">Prochaine partie</p>
       <div class="mode-switch" role="group" aria-label="Mode de jeu">
@@ -104,6 +98,10 @@
 
   <div id="map-shell">
     <div id="map"></div>
+    <div class="action-row map-draw-actions" id="draw-actions" hidden>
+      <button type="button" id="btn-clear" class="btn-secondary" disabled>Effacer</button>
+      <button type="button" id="btn-validate" class="btn-primary" disabled>Valider</button>
+    </div>
     <div class="map-hud" aria-label="Affichage carte">
       <label class="toggle">
         <input id="departments" type="checkbox" checked>
@@ -116,7 +114,7 @@
         <span>Communes</span>
       </label>
       <label class="toggle">
-        <input id="cities" type="checkbox">
+        <input id="cities" type="checkbox" checked>
         <span class="toggle-ui" aria-hidden="true"></span>
         <span>Villes</span>
       </label>

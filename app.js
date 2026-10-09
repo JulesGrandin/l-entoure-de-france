@@ -32,17 +32,17 @@ const els = {
   timerValue: document.querySelector("#timer-value"),
   timerBar: document.querySelector("#timer-block .timer-bar"),
   resultSection: document.querySelector("#result-section"),
-  resTarget: document.querySelector("#res-target"),
   resActual: document.querySelector("#res-actual"),
-  resDiff: document.querySelector("#res-diff"),
+  resDiffPop: document.querySelector("#res-diff-pop"),
+  resDiffPct: document.querySelector("#res-diff-pct"),
   resCount: document.querySelector("#res-count"),
-  resScore: document.querySelector("#res-score"),
+  statsZoneLabel: document.querySelector("#stats-zone-label"),
   drawActions: document.querySelector("#draw-actions"),
   btnClear: document.querySelector("#btn-clear"),
   btnValidate: document.querySelector("#btn-validate"),
   btnNext: document.querySelector("#btn-next"),
+  btnPerfectZone: document.querySelector("#btn-perfect-zone"),
   finalScore: document.querySelector("#final-score"),
-  finalComment: document.querySelector("#final-comment"),
   btnReplay: document.querySelector("#btn-replay"),
   status: document.querySelector("#status"),
   departments: document.querySelector("#departments"),
@@ -64,6 +64,7 @@ const game = {
   stroke: [],
   roundEndsAt: 0,
   timerRaf: null,
+  validatedThisRound: false,
 };
 
 const loader = {
@@ -173,7 +174,7 @@ function mapPadding() {
   const w = el.clientWidth || window.innerWidth;
   const h = el.clientHeight || window.innerHeight;
   const inset = Math.max(10, Math.round(Math.min(w, h) * 0.022));
-  const timerTop = document.body.classList.contains("has-timer") ? TIMER_BAR_PX : 0;
+  const timerTop = document.body.classList.contains("is-playing") ? TIMER_BAR_PX : 0;
   return {
     top: inset + timerTop,
     left: inset,
@@ -231,13 +232,38 @@ function scoreForRound(target, actual) {
   return Math.round(20 * (1 - err));
 }
 
-function formatPop(n) {
-  if (n >= 1_000_000) return `${fmtCompact.format(n).replace(/\s/g, "\u202f")} habitants`;
+const fmtMillions = new Intl.NumberFormat("fr-FR", {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 1,
+});
+
+/** Objectif affiché : « millions » en toutes lettres (pluriel à partir de 2 M). */
+function formatPopTarget(n) {
+  if (n >= 1_000_000) {
+    const num = fmtMillions.format(n / 1_000_000).replace(/\s/g, "\u202f");
+    const word = n >= 2_000_000 ? "millions" : "million";
+    return `${num} ${word} d'habitants`;
+  }
   return `${fmt.format(n)} habitants`;
+}
+
+function formatPop(n) {
+  return formatPopTarget(n);
 }
 
 function formatPopShort(n) {
   return `${fmt.format(n)} hab.`;
+}
+
+function formatPopCount(n) {
+  return `${fmt.format(n)} habitants`;
+}
+
+function formatDiffPopulation(diff) {
+  if (diff === 0) return "0 habitant d'écart";
+  const n = fmt.format(Math.abs(diff));
+  if (diff > 0) return `${n} habitants en trop`;
+  return `${n} habitants en moins`;
 }
 
 function shuffle(arr, rng = Math.random) {
@@ -315,6 +341,162 @@ function populationForIds(ids) {
   return pop;
 }
 
+function indicesSortedByDistanceFrom(seed) {
+  const n = index.pop.length;
+  const lon0 = index.lon[seed];
+  const lat0 = index.lat[seed];
+  const indices = new Array(n);
+  for (let i = 0; i < n; i++) indices[i] = i;
+  indices.sort((a, b) => {
+    const da = (index.lon[a] - lon0) ** 2 + (index.lat[a] - lat0) ** 2;
+    const db = (index.lon[b] - lon0) ** 2 + (index.lat[b] - lat0) ** 2;
+    return da - db;
+  });
+  return indices;
+}
+
+function refineCommuneSubset(ids, target, pool) {
+  const set = new Set(ids);
+  let sum = populationForIds(ids);
+
+  for (let iter = 0; iter < 320; iter++) {
+    const currentPts = scoreForRound(target, sum);
+    const currentDiff = Math.abs(sum - target);
+    let best = null;
+
+    for (const i of set) {
+      if (set.size <= 1) break;
+      const ns = sum - index.pop[i];
+      const pts = scoreForRound(target, ns);
+      const diff = Math.abs(ns - target);
+      if (pts > currentPts || (pts === currentPts && diff < currentDiff)) {
+        best = { type: "remove", i, sum: ns, pts, diff };
+      }
+    }
+    for (const i of pool) {
+      if (set.has(i)) continue;
+      const ns = sum + index.pop[i];
+      const pts = scoreForRound(target, ns);
+      const diff = Math.abs(ns - target);
+      if (
+        !best ||
+        pts > best.pts ||
+        (pts === best.pts && diff < best.diff)
+      ) {
+        best = { type: "add", i, sum: ns, pts, diff };
+      }
+    }
+    if (!best) break;
+    if (best.pts < currentPts) break;
+    if (best.pts === currentPts && best.diff >= currentDiff) break;
+
+    if (best.type === "add") set.add(best.i);
+    else set.delete(best.i);
+    sum = best.sum;
+    if (scoreForRound(target, sum) === 20) break;
+  }
+
+  return { ids: [...set], sum };
+}
+
+function greedySubsetFromOrder(order, target) {
+  const ids = [];
+  let sum = 0;
+  for (const i of order) {
+    const p = index.pop[i];
+    if (!p) continue;
+    const next = sum + p;
+    if (ids.length > 0 && next > target * 1.035 && sum >= target * 0.965) continue;
+    if (ids.length > 0 && next > target * 1.18) continue;
+    ids.push(i);
+    sum = next;
+  }
+  const pool = order.slice(0, Math.min(900, order.length));
+  return refineCommuneSubset(ids, target, pool);
+}
+
+function generatePerfectZone(target) {
+  const n = index.pop.length;
+  let best = { ids: [], sum: 0, pts: -1, diff: Infinity };
+
+  for (let t = 0; t < 18; t++) {
+    let built;
+    if (t % 3 === 2) {
+      const near = indicesSortedByDistanceFrom(Math.floor(Math.random() * n)).slice(0, 700);
+      shuffle(near);
+      built = greedySubsetFromOrder(near, target);
+    } else {
+      built = greedySubsetFromOrder(indicesSortedByDistanceFrom(Math.floor(Math.random() * n)), target);
+    }
+    const pts = scoreForRound(target, built.sum);
+    const diff = Math.abs(built.sum - target);
+    if (pts > best.pts || (pts === best.pts && diff < best.diff)) {
+      best = { ...built, pts, diff };
+    }
+    if (best.pts === 20) break;
+  }
+
+  return best;
+}
+
+function ringForCommuneIds(ids) {
+  if (!ids.length) return null;
+  let minLng = Infinity;
+  let maxLng = -Infinity;
+  let minLat = Infinity;
+  let maxLat = -Infinity;
+  for (const i of ids) {
+    const [lng, lat] = communeMapCoord(i);
+    minLng = Math.min(minLng, lng);
+    maxLng = Math.max(maxLng, lng);
+    minLat = Math.min(minLat, lat);
+    maxLat = Math.max(maxLat, lat);
+  }
+  const padLng = Math.max(0.012, (maxLng - minLng) * 0.08 + 0.008);
+  const padLat = Math.max(0.012, (maxLat - minLat) * 0.08 + 0.008);
+  return [
+    [minLng - padLng, minLat - padLat],
+    [maxLng + padLng, minLat - padLat],
+    [maxLng + padLng, maxLat + padLat],
+    [minLng - padLng, maxLat + padLat],
+    [minLng - padLng, minLat - padLat],
+  ];
+}
+
+function updateResultStatsDisplay(actual, ids, target, { updateScore = true } = {}) {
+  const diff = actual - target;
+  const diffPct = target ? (100 * diff) / target : 0;
+  if (updateScore) {
+    els.roundScoreBannerValue.textContent = String(scoreForRound(target, actual));
+  }
+  els.resActual.textContent = formatPopCount(actual);
+  els.resCount.textContent = fmt.format(ids.length);
+  els.resDiffPop.textContent = formatDiffPopulation(diff);
+  els.resDiffPct.textContent = `${fmt1.format(Math.abs(diffPct))}\u00a0%`;
+}
+
+function showPerfectZonePreview() {
+  if (game.phase !== "result" || !index) return;
+  const target = game.targets[game.round];
+  const { ids, sum } = generatePerfectZone(target);
+  if (!ids.length) return;
+
+  game.selectionIds = ids;
+  paintZones();
+
+  game.sketchRing = null;
+  game.stroke = [];
+  game.drawing = false;
+  updateSketchLayer();
+  setSketchCursor(false);
+  for (const id of ["sketch-line", "sketch-fill", "sketch-outline"]) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", "none");
+  }
+
+  els.statsZoneLabel.textContent = "Zone parfaite";
+  updateResultStatsDisplay(sum, ids, target, { updateScore: false });
+}
+
 function simplifyStroke(points, minDistPx = 5) {
   if (points.length < 2) return points;
   const out = [points[0]];
@@ -357,6 +539,7 @@ function updateSketchLayer() {
         : []),
     ],
   });
+  positionDrawActions();
 }
 
 function clearSketch() {
@@ -365,13 +548,69 @@ function clearSketch() {
   game.drawing = false;
   setSketchCursor(false);
   updateSketchLayer();
-  els.btnClear.disabled = true;
-  els.btnValidate.disabled = true;
+  setDrawUi(false);
 }
 
 function setDrawUi(enabled) {
-  els.btnClear.disabled = !enabled;
-  els.btnValidate.disabled = !enabled;
+  const ready = enabled && !!game.sketchRing;
+  els.btnClear.disabled = !ready;
+  els.btnValidate.disabled = !ready;
+  if (ready) {
+    els.drawActions.removeAttribute("hidden");
+    positionDrawActions();
+  } else {
+    els.drawActions.setAttribute("hidden", "");
+    els.drawActions.style.visibility = "hidden";
+  }
+}
+
+function sketchScreenBounds() {
+  if (!map || !game.sketchRing?.length) return null;
+  const ring = game.sketchRing;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const lngLat of ring) {
+    const p = map.project(lngLat);
+    minX = Math.min(minX, p.x);
+    minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x);
+    maxY = Math.max(maxY, p.y);
+  }
+  const rect = map.getCanvas().getBoundingClientRect();
+  return {
+    top: rect.top + minY,
+    bottom: rect.top + maxY,
+    centerX: rect.left + (minX + maxX) / 2,
+  };
+}
+
+function positionDrawActions() {
+  const row = els.drawActions;
+  if (!row || row.hasAttribute("hidden") || game.phase !== "draw") {
+    if (row) row.style.visibility = "hidden";
+    return;
+  }
+  const bounds = sketchScreenBounds();
+  if (!bounds) {
+    row.style.visibility = "hidden";
+    return;
+  }
+  row.style.visibility = "visible";
+  const gap = 12;
+  const margin = 16;
+  const h = row.offsetHeight || 44;
+  const w = row.offsetWidth || 200;
+  const spaceBelow = window.innerHeight - bounds.bottom - gap;
+  const spaceAbove = bounds.top - gap;
+  const placeBelow = spaceBelow >= h + margin || spaceBelow >= spaceAbove;
+  const top = placeBelow ? bounds.bottom + gap : bounds.top - gap - h;
+  let centerX = bounds.centerX;
+  centerX = Math.max(margin + w / 2, Math.min(window.innerWidth - margin - w / 2, centerX));
+  row.style.left = `${centerX}px`;
+  row.style.top = `${Math.max(margin, Math.min(window.innerHeight - margin - h, top))}px`;
+  row.style.transform = "translateX(-50%)";
 }
 
 function setSketchCursor(active) {
@@ -387,13 +626,17 @@ function setIntroMapView() {
   }
 }
 
+function ensureSketchLayersForDraw() {
+  for (const id of ["sketch-line", "sketch-fill", "sketch-outline"]) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", "visible");
+  }
+}
+
 function setGameMapView() {
   document.body.classList.remove("is-intro");
   document.body.classList.add("is-playing");
   if (map.getLayer("zone")) map.setLayoutProperty("zone", "visibility", "visible");
-  for (const id of ["sketch-line", "sketch-fill", "sketch-outline"]) {
-    if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", "visible");
-  }
+  ensureSketchLayersForDraw();
   setDepartmentsVisible(els.departments.checked);
   setCommunesVisible(els.communes.checked);
 }
@@ -407,20 +650,19 @@ function dismissIntro() {
   scheduleRefit();
 }
 
+const ROUND_COUNT = 5;
+
 function renderScoreHistory() {
-  if (!game.roundResults.length) {
-    els.scoreHistory.innerHTML = "";
-    const li = document.createElement("li");
-    li.className = "score-history-empty";
-    li.textContent = "Aucune manche jouée";
-    els.scoreHistory.appendChild(li);
-    return;
-  }
   els.scoreHistory.innerHTML = "";
-  for (let i = 0; i < game.roundResults.length; i++) {
-    const r = game.roundResults[i];
+  for (let i = 0; i < ROUND_COUNT; i++) {
     const li = document.createElement("li");
-    li.textContent = `Manche ${i + 1} — ${r.pts}/20`;
+    const r = game.roundResults[i];
+    if (r) {
+      li.textContent = `Manche ${i + 1} — ${r.pts}/20`;
+    } else {
+      li.className = "score-history-empty";
+      li.textContent = `Manche ${i + 1} — À venir`;
+    }
     els.scoreHistory.appendChild(li);
   }
   const total = game.roundScores.reduce((a, b) => a + b, 0);
@@ -513,8 +755,10 @@ function startGame() {
 
 function beginRound() {
   game.phase = "draw";
+  game.validatedThisRound = false;
   game.selectionIds = [];
   els.finishModal.setAttribute("hidden", "");
+  ensureSketchLayersForDraw();
   clearSketch();
   paintZones();
 
@@ -523,9 +767,9 @@ function beginRound() {
   els.targetLabel.textContent = formatPop(target);
   els.resultSection.setAttribute("hidden", "");
   els.roundScoreBanner.setAttribute("hidden", "");
-  if (game.roundResults.length) renderScoreHistory();
-  els.drawActions.removeAttribute("hidden");
+  renderScoreHistory();
   els.btnNext.setAttribute("hidden", "");
+  els.btnPerfectZone.setAttribute("hidden", "");
   setDrawUi(false);
   startRoundTimer();
   scheduleRefit();
@@ -541,6 +785,7 @@ function finishRoundValidation() {
   const actual = populationForIds(ids);
   const target = game.targets[game.round];
   const pts = scoreForRound(target, actual);
+  game.validatedThisRound = true;
   applyRoundResult({ pts, actual, ids, timedOut: false });
 }
 
@@ -555,27 +800,33 @@ function applyRoundResult({ pts, actual, ids, timedOut }) {
   game.roundResults.push({ target, actual, pts, count: ids.length, diff, diffPct, timedOut });
   paintZones();
 
+  els.timerBlock.setAttribute("hidden", "");
+  els.drawActions.setAttribute("hidden", "");
+  renderScoreHistory();
+
+  if (timedOut) {
+    if (game.round >= 4) {
+      showFinish();
+    } else {
+      game.round += 1;
+      beginRound();
+    }
+    return;
+  }
+
   game.phase = "result";
 
-  els.timerBlock.setAttribute("hidden", "");
   els.roundScoreBanner.removeAttribute("hidden");
-  els.roundScoreBannerValue.textContent = String(pts);
   els.resultSection.removeAttribute("hidden");
-  els.resTarget.textContent = formatPopShort(target);
-  els.resActual.textContent = timedOut ? "—" : formatPopShort(actual);
-  els.resScore.textContent = `${pts}/20`;
-  if (timedOut) {
-    els.resDiff.textContent = "Temps dépassé";
-    els.resCount.textContent = "—";
-  } else {
-    const sign = diff >= 0 ? "+" : "−";
-    els.resDiff.textContent = `${sign}${fmt.format(Math.abs(diff))} (${sign}${fmt1.format(Math.abs(diffPct))} %)`;
-    els.resCount.textContent = fmt.format(ids.length);
-  }
-  renderScoreHistory();
-  els.drawActions.setAttribute("hidden", "");
+  els.statsZoneLabel.textContent = "Dans votre zone";
+  updateResultStatsDisplay(actual, ids, target);
   els.btnNext.removeAttribute("hidden");
   els.btnNext.textContent = game.round >= 4 ? "Voir le résultat final" : "Manche suivante";
+  if (game.validatedThisRound) {
+    els.btnPerfectZone.removeAttribute("hidden");
+  } else {
+    els.btnPerfectZone.setAttribute("hidden", "");
+  }
   setSketchCursor(false);
 }
 
@@ -592,7 +843,7 @@ function nextRound() {
 function formatDiffLine(diff, timedOut) {
   if (timedOut) return "Temps écoulé";
   const sign = diff >= 0 ? "+" : "−";
-  return `${sign}${fmt.format(Math.abs(diff))} hab.`;
+  return `${sign}${fmt.format(Math.abs(diff))} habs.`;
 }
 
 function showFinish() {
@@ -600,12 +851,9 @@ function showFinish() {
   const total = game.roundScores.reduce((a, b) => a + b, 0);
   els.drawActions.setAttribute("hidden", "");
   els.btnNext.setAttribute("hidden", "");
+  els.btnPerfectZone.setAttribute("hidden", "");
   els.resultSection.setAttribute("hidden", "");
   els.finalScore.textContent = `${total} / 100`;
-  if (total >= 85) els.finalComment.textContent = "Cartographe de l'âme — bravo !";
-  else if (total >= 65) els.finalComment.textContent = "Solide connaissance du territoire.";
-  else if (total >= 40) els.finalComment.textContent = "Encore un tour pour affûter l'œil.";
-  else els.finalComment.textContent = "La France recèle encore bien des surprises.";
 
   els.finishRecap.innerHTML = "";
   for (let i = 0; i < game.roundResults.length; i++) {
@@ -614,11 +862,14 @@ function showFinish() {
     const title = document.createElement("p");
     title.className = "finish-recap-title";
     title.textContent = `Manche ${i + 1} — ${r.pts}/20`;
-    const detail = document.createElement("p");
-    detail.className = "finish-recap-detail";
+    const summary = document.createElement("p");
+    summary.className = "finish-recap-detail";
     const obtained = r.timedOut ? "—" : formatPopShort(r.actual);
-    detail.textContent = `Demandé ${formatPopShort(r.target)} · Obtenu ${obtained} · Écart ${formatDiffLine(r.diff, r.timedOut)}`;
-    li.append(title, detail);
+    summary.textContent = `Demandé ${formatPopTarget(r.target)} · Obtenu ${obtained}`;
+    const diffLine = document.createElement("p");
+    diffLine.className = "finish-recap-detail";
+    diffLine.textContent = `Écart ${formatDiffLine(r.diff, r.timedOut)}`;
+    li.append(title, summary, diffLine);
     els.finishRecap.appendChild(li);
   }
 
@@ -646,7 +897,7 @@ function bindDrawing() {
     game.sketchRing = null;
     canvas.setPointerCapture(event.pointerId);
     updateSketchLayer();
-    setDrawUi(true);
+    setDrawUi(false);
   });
 
   canvas.addEventListener("pointermove", (event) => {
@@ -749,13 +1000,10 @@ function paintZones() {
   ctx.lineWidth = 1.25 / world;
   const ids = game.selectionIds;
   if (ids.length) {
-    ctx.fillStyle = "#c23b33";
-    ctx.strokeStyle = "#c23b33";
-    for (const i of ids) {
-      const path = zonePaths[i];
-      ctx.stroke(path);
-      ctx.fill(path, "evenodd");
-    }
+    ctx.fillStyle = "#e8a19d";
+    const combined = new Path2D();
+    for (const i of ids) combined.addPath(zonePaths[i]);
+    ctx.fill(combined, "evenodd");
   }
   const source = map.getSource("zone");
   source.setCoordinates(zoneCorners());
@@ -833,21 +1081,21 @@ function paintMap(geojson, departements, france) {
     type: "line",
     source: "sketch",
     filter: ["==", "$type", "LineString"],
-    paint: { "line-color": "#2a6494", "line-width": 2.5 },
+    paint: { "line-color": "#c23b33", "line-width": 2.5 },
   });
   map.addLayer({
     id: "sketch-fill",
     type: "fill",
     source: "sketch",
     filter: ["==", "$type", "Polygon"],
-    paint: { "fill-color": "#2a6494", "fill-opacity": 0.12 },
+    paint: { "fill-color": "#e8a19d", "fill-opacity": 0.55 },
   });
   map.addLayer({
     id: "sketch-outline",
     type: "line",
     source: "sketch",
     filter: ["==", "$type", "Polygon"],
-    paint: { "line-color": "#2a6494", "line-width": 2 },
+    paint: { "line-color": "#c23b33", "line-width": 2 },
   });
   bindDrawing();
   placeCities();
@@ -899,6 +1147,7 @@ els.btnClear.addEventListener("click", () => {
 });
 els.btnValidate.addEventListener("click", () => finishRoundValidation());
 els.btnNext.addEventListener("click", () => nextRound());
+els.btnPerfectZone.addEventListener("click", () => showPerfectZonePreview());
 els.btnReplay.addEventListener("click", () => {
   stopRoundTimer();
   game.phase = "idle";
@@ -917,7 +1166,10 @@ els.communes.addEventListener("change", () => setCommunesVisible(els.communes.ch
 map.on("move", () => {
   paintZones();
   updateSketchLayer();
+  positionDrawActions();
 });
+
+window.addEventListener("resize", () => positionDrawActions());
 
 syncModeUi();
 
