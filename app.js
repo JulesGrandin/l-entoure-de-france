@@ -91,6 +91,10 @@ const loader = {
 
 loader.set(6);
 
+function yieldFrame() {
+  return new Promise((resolve) => requestAnimationFrame(resolve));
+}
+
 async function fetchJsonWithProgress(url, onRatio) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${url} (${res.status})`);
@@ -1029,25 +1033,48 @@ function eachRing(geometry, fn) {
   }
 }
 
-function buildZonePaths() {
+function pathForCommuneGeometry(geometry) {
+  const polys = geometry.type === "Polygon" ? [geometry.coordinates] : geometry.coordinates;
+  const path = new Path2D();
+  for (const rings of polys) {
+    for (const ring of rings) {
+      if (ring.length < 3) continue;
+      path.moveTo((ring[0][0] + 180) / 360, mercUnit(ring[0][1]));
+      for (let k = 1; k < ring.length; k++) {
+        path.lineTo((ring[k][0] + 180) / 360, mercUnit(ring[k][1]));
+      }
+      path.closePath();
+    }
+  }
+  return path;
+}
+
+async function buildZonePathsAsync(onRatio) {
   const n = features.length;
   zonePaths = new Array(n);
-  for (let i = 0; i < n; i++) {
-    const geometry = features[i].geometry;
-    const polys = geometry.type === "Polygon" ? [geometry.coordinates] : geometry.coordinates;
-    const path = new Path2D();
-    for (const rings of polys) {
-      for (const ring of rings) {
-        if (ring.length < 3) continue;
-        path.moveTo((ring[0][0] + 180) / 360, mercUnit(ring[0][1]));
-        for (let k = 1; k < ring.length; k++) {
-          path.lineTo((ring[k][0] + 180) / 360, mercUnit(ring[k][1]));
-        }
-        path.closePath();
-      }
+  const batch = Math.max(350, Math.round(n / 36));
+  for (let start = 0; start < n; start += batch) {
+    const end = Math.min(n, start + batch);
+    for (let i = start; i < end; i++) {
+      zonePaths[i] = pathForCommuneGeometry(features[i].geometry);
     }
-    zonePaths[i] = path;
+    onRatio?.(end / n);
+    if (end < n) await yieldFrame();
   }
+}
+
+function waitForMapIdle() {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+    map.once("idle", finish);
+    map.triggerRepaint();
+    window.setTimeout(finish, 12_000);
+  });
 }
 
 function zoneCorners() {
@@ -1104,8 +1131,12 @@ function paintZones() {
   }
 }
 
-function paintMap(geojson, departements, france) {
+async function paintMap(geojson, departements, france, onPrepare) {
+  const prep = (t) => onPrepare?.(Math.max(0, Math.min(1, t)));
   features = geojson.features;
+
+  prep(0.04);
+  await yieldFrame();
   map.addSource("france", { type: "geojson", data: france });
   map.addLayer({
     id: "france-fill",
@@ -1119,7 +1150,12 @@ function paintMap(geojson, departements, france) {
     source: "france",
     paint: { "line-color": "#b8bcc4", "line-width": 1.2 },
   });
+
+  prep(0.1);
+  await yieldFrame();
   map.addSource("communes", { type: "geojson", data: geojson });
+  prep(0.22);
+  await yieldFrame();
   map.addLayer({
     id: "communes-line",
     type: "line",
@@ -1131,7 +1167,11 @@ function paintMap(geojson, departements, france) {
     },
     paint: { "line-color": "#e2e5ea", "line-width": 0.35 },
   });
-  buildZonePaths();
+
+  prep(0.26);
+  await yieldFrame();
+  await buildZonePathsAsync((f) => prep(0.26 + f * 0.52));
+
   zoneCanvas.width = Math.max(1, Math.round(map.transform.width || 2));
   zoneCanvas.height = Math.max(1, Math.round(map.transform.height || 2));
   map.addSource("zone", {
@@ -1146,6 +1186,9 @@ function paintMap(geojson, departements, france) {
     source: "zone",
     paint: { "raster-opacity": 1, "raster-fade-duration": 0 },
   });
+
+  prep(0.82);
+  await yieldFrame();
   map.addSource("departements", { type: "geojson", data: departements });
   map.addLayer({
     id: "departements-line",
@@ -1183,8 +1226,11 @@ function paintMap(geojson, departements, france) {
     filter: ["==", "$type", "Polygon"],
     paint: { "line-color": "#c23b33", "line-width": 2 },
   });
+
+  prep(0.92);
   bindDrawing();
   placeCities();
+  prep(1);
 }
 
 function placeCities() {
@@ -1264,13 +1310,18 @@ syncModeUi();
 map.on("load", async () => {
   const loadParts = { index: 0, dep: 0, france: 0, communes: 0 };
   const loadWeights = { index: 0.06, dep: 0.08, france: 0.08, communes: 0.78 };
-  const loadBase = 12;
-  const loadSpan = 83;
+  const loadBase = 8;
+  const fetchSpan = 72;
+  const prepareSpan = 20;
 
   function refreshLoadProgress() {
     let sum = 0;
     for (const key of Object.keys(loadWeights)) sum += loadWeights[key] * loadParts[key];
-    loader.set(loadBase + sum * loadSpan);
+    loader.set(loadBase + sum * fetchSpan);
+  }
+
+  function setPrepareProgress(ratio) {
+    loader.set(loadBase + fetchSpan + ratio * prepareSpan);
   }
 
   loader.set(10);
@@ -1295,10 +1346,11 @@ map.on("load", async () => {
       }),
     ]);
     index = indexData;
-    loader.set(96);
-    paintMap(geojson, departements, france);
+    await paintMap(geojson, departements, france, setPrepareProgress);
     setIntroMapView();
     frameFrance(true);
+    setPrepareProgress(1);
+    await waitForMapIdle();
     loader.set(100);
     loader.hide();
     els.status.textContent = "";
