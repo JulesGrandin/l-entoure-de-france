@@ -45,6 +45,10 @@ const els = {
   btnPerfectZone: document.querySelector("#btn-perfect-zone"),
   finalScore: document.querySelector("#final-score"),
   btnReplay: document.querySelector("#btn-replay"),
+  roundBrief: document.querySelector("#round-brief"),
+  roundBriefKicker: document.querySelector("#round-brief-kicker"),
+  roundBriefTarget: document.querySelector("#round-brief-target"),
+  btnRoundStart: document.querySelector("#btn-round-start"),
   status: document.querySelector("#status"),
   departments: document.querySelector("#departments"),
   communes: document.querySelector("#communes"),
@@ -709,6 +713,24 @@ function stopRoundTimer() {
   document.body.classList.remove("has-timer");
 }
 
+function showRoundBrief() {
+  game.phase = "brief";
+  stopRoundTimer();
+  els.timerBlock.setAttribute("hidden", "");
+  const target = game.targets[game.round];
+  els.roundBriefKicker.textContent = `Manche ${game.round + 1} / 5`;
+  els.roundBriefTarget.textContent = formatPop(target);
+  els.roundBrief.removeAttribute("hidden");
+  setSketchCursor(false);
+}
+
+function dismissRoundBrief() {
+  if (game.phase !== "brief") return;
+  game.phase = "draw";
+  els.roundBrief.setAttribute("hidden", "");
+  startRoundTimer();
+}
+
 function startRoundTimer() {
   stopRoundTimer();
   game.roundEndsAt = Date.now() + ROUND_TIME_MS;
@@ -781,7 +803,6 @@ function startGame() {
 }
 
 function beginRound() {
-  game.phase = "draw";
   game.validatedThisRound = false;
   game.selectionIds = [];
   els.finishModal.setAttribute("hidden", "");
@@ -803,7 +824,7 @@ function beginRound() {
     setCommunesVisible(false);
   }
   setDrawUi(false);
-  startRoundTimer();
+  showRoundBrief();
   scheduleRefit();
 }
 
@@ -833,6 +854,7 @@ function applyRoundResult({ pts, actual, ids, timedOut }) {
   paintZones();
 
   els.timerBlock.setAttribute("hidden", "");
+  els.roundBrief.setAttribute("hidden", "");
   els.drawActions.setAttribute("hidden", "");
   renderScoreHistory();
 
@@ -887,6 +909,7 @@ function showFinish() {
   els.btnPerfectZone.setAttribute("hidden", "");
   els.roundResultSheet.setAttribute("hidden", "");
   els.resultSection.setAttribute("hidden", "");
+  els.roundBrief.setAttribute("hidden", "");
   els.finalScore.textContent = `${total} / 100`;
 
   els.finishRecap.innerHTML = "";
@@ -1204,6 +1227,7 @@ els.modeRandomFinish.addEventListener("click", () => setGameMode("random"));
 els.modeGridFinish.addEventListener("click", () => setGameMode("grid"));
 
 els.btnStart.addEventListener("click", () => startGame());
+els.btnRoundStart.addEventListener("click", () => dismissRoundBrief());
 els.btnClear.addEventListener("click", () => {
   clearSketch();
   setDrawUi(false);
@@ -1218,6 +1242,7 @@ els.btnReplay.addEventListener("click", () => {
   clearSketch();
   paintZones();
   els.timerBlock.setAttribute("hidden", "");
+  els.roundBrief.setAttribute("hidden", "");
   els.finishModal.setAttribute("hidden", "");
   startGame();
 });

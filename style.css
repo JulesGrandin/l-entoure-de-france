@@ -66,6 +66,64 @@ body.is-playing #map canvas {
   touch-action: none;
 }
 
+.round-brief {
+  position: absolute;
+  inset: 0;
+  z-index: 14;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  padding-top: max(24px, env(safe-area-inset-top));
+  padding-bottom: max(24px, env(safe-area-inset-bottom));
+  background: rgba(255, 255, 255, 0.62);
+  backdrop-filter: blur(3px);
+  pointer-events: auto;
+}
+
+.round-brief[hidden] { display: none !important; }
+
+.round-brief-card {
+  width: min(100%, 520px);
+  text-align: center;
+}
+
+.round-brief-kicker {
+  margin: 0;
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--red);
+}
+
+.round-brief-prompt {
+  margin: 10px 0 0;
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+
+.round-brief-target {
+  margin: 8px 0 0;
+  font-size: clamp(36px, 11vw, 72px);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+  color: var(--ink);
+  text-wrap: balance;
+}
+
+.btn-round-start {
+  margin-top: 22px;
+  min-width: min(100%, 16rem);
+  padding: 12px 20px;
+  font-size: 14px;
+}
+
 #chrome {
   position: fixed;
   top: 14px;
@@ -878,6 +936,23 @@ body.is-playing #chrome {
   .maplibregl-marker { pointer-events: none !important; }
 
   #map canvas { touch-action: none; }
+
+  .round-brief {
+    padding: 14px 12px;
+    padding-bottom: max(64px, calc(52px + env(safe-area-inset-bottom)));
+  }
+
+  .round-brief-prompt { margin-top: 6px; font-size: 12px; }
+
+  .round-brief-target {
+    font-size: clamp(30px, 10vw, 48px);
+  }
+
+  .btn-round-start {
+    margin-top: 16px;
+    width: 100%;
+    max-width: 272px;
+  }
 
   .map-draw-actions {
     z-index: 14;

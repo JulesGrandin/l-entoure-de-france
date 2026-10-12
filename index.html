@@ -100,6 +100,14 @@
 
   <div id="map-shell">
     <div id="map"></div>
+    <div id="round-brief" class="round-brief" hidden role="dialog" aria-modal="true" aria-labelledby="round-brief-target">
+      <div class="round-brief-card">
+        <p class="round-brief-kicker" id="round-brief-kicker">Manche 1 / 5</p>
+        <p class="round-brief-prompt">Entourez une zone de…</p>
+        <p class="round-brief-target" id="round-brief-target">—</p>
+        <button type="button" id="btn-round-start" class="btn-primary btn-round-start">C'est parti !</button>
+      </div>
+    </div>
     <div class="action-row map-draw-actions" id="draw-actions" hidden>
       <button type="button" id="btn-clear" class="btn-secondary" disabled>Effacer</button>
       <button type="button" id="btn-validate" class="btn-primary" disabled>Valider</button>
