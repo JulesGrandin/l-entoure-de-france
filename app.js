@@ -717,6 +717,11 @@ function stopRoundTimer() {
   document.body.classList.remove("has-timer");
 }
 
+function hideRoundBriefOverlay() {
+  els.roundBrief.setAttribute("hidden", "");
+  document.body.classList.remove("is-round-brief");
+}
+
 function showRoundBrief() {
   game.phase = "brief";
   stopRoundTimer();
@@ -725,13 +730,14 @@ function showRoundBrief() {
   els.roundBriefKicker.textContent = `Manche ${game.round + 1} / 5`;
   els.roundBriefTarget.textContent = formatPop(target);
   els.roundBrief.removeAttribute("hidden");
+  document.body.classList.add("is-round-brief");
   setSketchCursor(false);
 }
 
 function dismissRoundBrief() {
   if (game.phase !== "brief") return;
   game.phase = "draw";
-  els.roundBrief.setAttribute("hidden", "");
+  hideRoundBriefOverlay();
   startRoundTimer();
 }
 
@@ -858,7 +864,7 @@ function applyRoundResult({ pts, actual, ids, timedOut }) {
   paintZones();
 
   els.timerBlock.setAttribute("hidden", "");
-  els.roundBrief.setAttribute("hidden", "");
+  hideRoundBriefOverlay();
   els.drawActions.setAttribute("hidden", "");
   renderScoreHistory();
 
@@ -913,7 +919,7 @@ function showFinish() {
   els.btnPerfectZone.setAttribute("hidden", "");
   els.roundResultSheet.setAttribute("hidden", "");
   els.resultSection.setAttribute("hidden", "");
-  els.roundBrief.setAttribute("hidden", "");
+  hideRoundBriefOverlay();
   els.finalScore.textContent = `${total} / 100`;
 
   els.finishRecap.innerHTML = "";
@@ -1288,7 +1294,7 @@ els.btnReplay.addEventListener("click", () => {
   clearSketch();
   paintZones();
   els.timerBlock.setAttribute("hidden", "");
-  els.roundBrief.setAttribute("hidden", "");
+  hideRoundBriefOverlay();
   els.finishModal.setAttribute("hidden", "");
   startGame();
 });

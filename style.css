@@ -83,6 +83,13 @@ body.is-playing #map canvas {
 
 .round-brief[hidden] { display: none !important; }
 
+body.is-round-brief #chrome,
+body.is-round-brief .score-history-wrap {
+  filter: blur(5px);
+  opacity: 0.45;
+  pointer-events: none;
+}
+
 .round-brief-card {
   width: min(100%, 520px);
   text-align: center;
@@ -129,6 +136,7 @@ body.is-playing #map canvas {
   top: 14px;
   left: 16px;
   z-index: 10;
+  transition: filter 0.28s ease, opacity 0.28s ease;
   width: fit-content;
   max-width: min(288px, calc(100vw - 32px));
   max-height: calc(100vh - 28px);
@@ -181,6 +189,7 @@ body.is-playing .brand {
   border: 0;
   box-shadow: none;
   pointer-events: none;
+  transition: filter 0.28s ease, opacity 0.28s ease;
 }
 
 .score-history-wrap[hidden] { display: none !important; }
